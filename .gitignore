@@ -1,0 +1,40 @@
+# Unreal generated files
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# Unreal local state
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+*.xcodeproj
+*.xcworkspace
+
+# Build outputs and debug symbols
+*.log
+*.pdb
+*.idb
+*.ipch
+*.obj
+*.o
+*.dll
+*.exe
+
+# IDE/editor files
+.vs/
+.vscode/
+.idea/
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Codex / local agent state
+.codex/
+.agents/
