@@ -30,11 +30,15 @@ Saved/
 .vscode/
 .idea/
 *.code-workspace
+*.sln.DotSettings.user
 
 # OS files
 .DS_Store
 Thumbs.db
 
-# Codex / local agent state
+# Local AI assistant state and private notes
 .codex/
 .agents/
+.claude/
+CLAUDE.local.md
+responses/
