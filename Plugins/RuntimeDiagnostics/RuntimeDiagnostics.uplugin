@@ -1,0 +1,18 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "1.0",
+  "FriendlyName": "Runtime Diagnostics",
+  "Description": "Read-only PIE snapshots and explicitly bounded CSV captures for editor automation.",
+  "Category": "Development",
+  "EnabledByDefault": true,
+  "CanContainContent": false,
+  "Modules": [
+    { "Name": "RuntimeDiagnostics", "Type": "Editor", "LoadingPhase": "PostEngineInit" },
+    { "Name": "RuntimeDiagnosticsMCP", "Type": "Editor", "LoadingPhase": "PostEngineInit" }
+  ],
+  "Plugins": [
+    { "Name": "EnhancedInput", "Enabled": true },
+    { "Name": "ToolsetRegistry", "Enabled": true }
+  ]
+}
