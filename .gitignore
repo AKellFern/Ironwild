@@ -42,3 +42,5 @@ Thumbs.db
 .claude/
 CLAUDE.local.md
 responses/
+.mcp.json
+Claude outputs/
