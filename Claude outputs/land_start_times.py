@@ -1,26 +1,24 @@
 """
-land_start_times.py  -  READ-ONLY helper for the Land-clip "hang" fix.
+land_start_times.py (v2)  -  READ-ONLY helper for the Land-clip "hang" fix.
 
-What it does
-------------
-For every M_Neutral_Jump_F_Land_* clip in the corrected retarget folder it finds
-the authored ground-contact time (the "FoleyEvent: Land" notify; falls back to the
-first rise of the contact_l / contact_r curve; falls back to 0.53 s Light / 1.03 s
-Heavy) and prints the Start Position to feed the Land sequence player:
+For every M_Neutral_Jump_F_Land_* clip in the corrected retarget folder it finds the
+authored ground-contact time and prints the Start Position to feed the Land sequence
+player:   start_position = contact_time - CROSSFADE   (CROSSFADE = 0.12 s)
 
-    start_position = contact_time - CROSSFADE      (CROSSFADE = 0.12 s)
+Contact time is taken, in order, from:
+  1. the "FoleyEvent: Land" notify (matched on the notify's own name/properties or on
+     the notify track called "Land" - NOT on the clip's asset path),
+  2. the first rise of the contact_l / contact_r curve,
+  3. a default (Light 0.53 s, Heavy 1.03 s)   <- flagged "FALLBACK" in the output.
+Anything earlier than 0.15 s is treated as spurious and skipped.
 
-It then writes the table to  <Project>/Saved/JumpCrouch_LandStartTimes.json.
-It never modifies, saves or creates any asset.
+It never modifies, saves or creates an asset. It writes
+<Project>/Saved/JumpCrouch_LandStartTimes.json and, for any clip that had to use a
+fallback, dumps every notify on that clip to the Output Log so the matching can be fixed.
 
-How to run (Unreal Editor 5.8, Python Editor Script Plugin enabled)
--------------------------------------------------------------------
-  Output Log > Cmd box:   py "C:/path/to/land_start_times.py"
-  or  Tools > Execute Python Script...
-
-NOTE: this script has NOT been run inside Unreal (no editor available where it was
-written). It tries several API spellings and reports which one worked. If a value
-comes from a fallback the "source" column says so.
+Run:  Output Log > Cmd:  py "C:/path/to/land_start_times.py"
+v1 bug: it matched "land" against the notify object's full path, which contains the
+clip name (..._Land_...), so every notify matched and the earliest one (time 0.0) won.
 """
 import json
 import os
@@ -29,13 +27,12 @@ import unreal
 
 CLIP_DIR = "/Game/Characters/Survival_Retargeted_ShoulderFix"
 NAME_PREFIX = "M_Neutral_Jump_F_Land_"
-CROSSFADE = 0.12  # Transition duration on every SM_Airborne transition (read from the ABP)
+CROSSFADE = 0.12
+MIN_VALID_CONTACT = 0.15
 FALLBACK_CONTACT = {"Light": 0.53, "Heavy": 1.03}
 
 
-# --------------------------------------------------------------------------- helpers
 def _lib():
-    # UE 5.x exposes UAnimationBlueprintLibrary as unreal.AnimationLibrary
     for name in ("AnimationLibrary", "AnimationBlueprintLibrary"):
         lib = getattr(unreal, name, None)
         if lib is not None:
@@ -43,8 +40,14 @@ def _lib():
     return None
 
 
+def _prop(obj, name, default=None):
+    try:
+        return obj.get_editor_property(name)
+    except Exception:
+        return default
+
+
 def _notify_time(lib, ev):
-    """Absolute trigger time (seconds) of an AnimNotifyEvent, or None."""
     if lib is not None:
         for fn in ("get_anim_notify_event_trigger_time", "get_notify_event_trigger_time"):
             f = getattr(lib, fn, None)
@@ -60,48 +63,89 @@ def _notify_time(lib, ev):
                 return float(f())
             except Exception:
                 pass
-    for prop in ("display_time", "trigger_time_offset"):
-        try:
-            return float(ev.get_editor_property(prop))
-        except Exception:
-            pass
+    for p in ("display_time", "trigger_time_offset"):
+        v = _prop(ev, p)
+        if v is not None:
+            try:
+                return float(v)
+            except Exception:
+                pass
     return None
 
 
-def _ev_text(ev):
+def _primitive_props_text(obj):
+    """Text of the notify object's own (non-object) properties, e.g. Event = Land."""
     parts = []
-    for prop in ("notify_name",):
+    for name in dir(obj):
+        if name.startswith("_"):
+            continue
         try:
-            parts.append(str(ev.get_editor_property(prop)))
+            v = getattr(obj, name)
+        except Exception:
+            continue
+        if callable(v) or isinstance(v, unreal.Object):
+            continue
+        try:
+            parts.append("%s=%s" % (name, v))
         except Exception:
             pass
-    for prop in ("notify", "notify_state_class"):
-        try:
-            obj = ev.get_editor_property(prop)
-            if obj:
-                parts.append(obj.get_name())
-                parts.append(str(obj))
-        except Exception:
-            pass
-    return " ".join(parts).lower()
+    return " ".join(parts)
+
+
+def _events(lib, anim):
+    try:
+        return list(lib.get_animation_notify_events(anim))
+    except Exception:
+        return list(_prop(anim, "notifies", []) or [])
+
+
+def _track_names(lib, anim):
+    try:
+        return [str(n) for n in lib.get_animation_notify_track_names(anim)]
+    except Exception:
+        return []
+
+
+def describe(lib, ev, tracks):
+    notify = _prop(ev, "notify")
+    state = _prop(ev, "notify_state_class")
+    tidx = _prop(ev, "track_index")
+    track = tracks[tidx] if isinstance(tidx, int) and 0 <= tidx < len(tracks) else ""
+    cls = ""
+    for o in (notify, state):
+        if o:
+            try:
+                cls = o.get_class().get_name()
+            except Exception:
+                cls = str(type(o).__name__)
+            break
+    props = _primitive_props_text(notify) if notify else ""
+    return {
+        "name": str(_prop(ev, "notify_name", "")),
+        "cls": cls,
+        "track": track,
+        "props": props,
+        "time": _notify_time(lib, ev),
+    }
 
 
 def find_land_notify_time(lib, anim):
-    try:
-        events = list(lib.get_animation_notify_events(anim)) if lib else list(anim.get_editor_property("notifies"))
-    except Exception:
-        try:
-            events = list(anim.get_editor_property("notifies"))
-        except Exception:
-            return None
-    times = []
-    for ev in events:
-        text = _ev_text(ev)
-        if "land" in text:
-            t = _notify_time(lib, ev)
-            if t is not None:
-                times.append(t)
-    return min(times) if times else None
+    tracks = _track_names(lib, anim)
+    descs = [describe(lib, ev, tracks) for ev in _events(lib, anim)]
+
+    def valid(d):
+        return d["time"] is not None and d["time"] >= MIN_VALID_CONTACT
+
+    # pass 1: notify's own name / properties mention "land" (path deliberately excluded)
+    hits = [d for d in descs if valid(d) and "land" in (d["name"] + " " + d["props"]).lower()]
+    # pass 2: the notify sits on a track called "Land"
+    if not hits:
+        hits = [d for d in descs if valid(d) and d["track"].strip().lower() == "land"]
+    if hits:
+        foley = [d for d in hits if "foley" in (d["name"] + d["cls"] + d["props"]).lower()]
+        pick = min((foley or hits), key=lambda d: d["time"])
+        return pick["time"], descs
+    return None, descs
 
 
 def find_contact_curve_time(lib, anim):
@@ -127,7 +171,7 @@ def find_contact_curve_time(lib, anim):
             continue
         thresh = lo + 0.5 * (hi - lo)
         for t, v in zip(times, values):
-            if v >= thresh:
+            if t >= MIN_VALID_CONTACT and v >= thresh:
                 best = t if best is None else min(best, t)
                 break
     return best
@@ -141,32 +185,29 @@ def clip_length(lib, anim):
                 return float(f(anim))
             except Exception:
                 pass
-    for prop in ("sequence_length", "play_length"):
-        try:
-            return float(anim.get_editor_property(prop))
-        except Exception:
-            pass
-    try:
-        return float(anim.get_play_length())
-    except Exception:
-        return None
+    for p in ("sequence_length", "play_length"):
+        v = _prop(anim, p)
+        if v is not None:
+            try:
+                return float(v)
+            except Exception:
+                pass
+    return None
 
 
-# --------------------------------------------------------------------------- main
 def main():
     lib = _lib()
     reg = unreal.AssetRegistryHelpers.get_asset_registry()
-    assets = reg.get_assets_by_path(CLIP_DIR, recursive=False)
     rows = []
-    for a in assets:
+    for a in reg.get_assets_by_path(CLIP_DIR, recursive=False):
         name = str(a.asset_name)
         if not name.startswith(NAME_PREFIX):
             continue
-        anim = unreal.load_asset(a.get_asset().get_path_name()) if hasattr(a, "get_asset") else None
+        anim = a.get_asset()
         if anim is None:
             continue
         kind = "Heavy" if "_Heavy_" in name else "Light"
-        contact = find_land_notify_time(lib, anim)
+        contact, descs = find_land_notify_time(lib, anim)
         source = "notify"
         if contact is None:
             contact = find_contact_curve_time(lib, anim)
@@ -174,13 +215,17 @@ def main():
         if contact is None:
             contact = FALLBACK_CONTACT[kind]
             source = "FALLBACK (%s default)" % kind
-        start = max(0.0, contact - CROSSFADE)
+        if source != "notify":
+            unreal.log_warning("%s: no usable Land notify; events on this clip:" % name)
+            for d in descs:
+                unreal.log_warning("    t=%s track=%r cls=%s name=%r props=%s"
+                                   % (d["time"], d["track"], d["cls"], d["name"], d["props"][:160]))
         rows.append({
             "clip": name,
             "kind": kind,
             "length_s": clip_length(lib, anim),
             "contact_s": round(contact, 3),
-            "start_position_s": round(start, 3),
+            "start_position_s": round(max(0.0, contact - CROSSFADE), 3),
             "source": source,
         })
 
@@ -191,7 +236,7 @@ def main():
 
     unreal.log("Land clip start positions (contact - %.2f s):" % CROSSFADE)
     for r in rows:
-        unreal.log("  %-42s contact %.3f  ->  Start Position %.3f   [%s]"
+        unreal.log("  %-40s contact %.3f  ->  Start Position %.3f   [%s]"
                    % (r["clip"].replace(NAME_PREFIX, ""), r["contact_s"], r["start_position_s"], r["source"]))
 
     out = os.path.join(unreal.Paths.project_saved_dir(), "JumpCrouch_LandStartTimes.json")
