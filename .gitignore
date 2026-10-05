@@ -7,6 +7,7 @@ Saved/
 
 # Unreal local state
 *.sln
+*.slnx
 *.suo
 *.opensdf
 *.sdf
