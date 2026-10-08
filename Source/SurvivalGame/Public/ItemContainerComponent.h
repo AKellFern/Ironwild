@@ -22,7 +22,7 @@ public:
 		TArray<FInventorySlot> Slots;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory")
-		int32 Capacity = 10;
+		int32 Capacity = 20;
 
 	int32 FindEmptySlot() const;
 
@@ -34,6 +34,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 		bool RemoveItem(int32 SlotIndex);
+
+		
 
 protected:
 	// Called when the game starts

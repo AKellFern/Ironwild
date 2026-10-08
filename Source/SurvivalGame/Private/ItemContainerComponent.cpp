@@ -11,7 +11,7 @@ UItemContainerComponent::UItemContainerComponent()
 	// off to improve performance if you don't need them.
 	PrimaryComponentTick.bCanEverTick = false;
 
-	Slots.SetNum(Capacity);
+	
 
 	// ...
 }
@@ -69,13 +69,12 @@ bool UItemContainerComponent::RemoveItem(int32 SlotIndex)
 	return true;
 }
 
-
 // Called when the game starts
 void UItemContainerComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// ...
+	Slots.SetNum(Capacity);
 	
 }
 
