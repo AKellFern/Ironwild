@@ -18,10 +18,10 @@ public:
 	// Sets default values for this component's properties
 	UItemContainerComponent();
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory")
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Inventory")
 		TArray<FInventorySlot> Slots;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (ClampMin = "1"))
 		int32 Capacity = 20;
 
 	int32 FindEmptySlot() const;
@@ -29,13 +29,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory")	
 		EContainerType ContainerType = EContainerType::None;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (ClampMin = "1"))
+		int32 MaxCapacity = 40;
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+		bool SetCapacity(int32 NewCapacity);
+
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 		bool AddItem(const FInventorySlot& Slot);
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 		bool RemoveItem(int32 SlotIndex);
 
-		
+
+/*TODO: broadcast OnContainerChanged */
 
 protected:
 	// Called when the game starts

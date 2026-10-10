@@ -29,6 +29,29 @@ int32 UItemContainerComponent::FindEmptySlot() const
 	return INDEX_NONE;
 }
 
+bool UItemContainerComponent::SetCapacity(int32 NewCapacity)
+{
+	if (NewCapacity <= 0)
+	{
+		return false;
+	}
+
+	if (NewCapacity > MaxCapacity)
+	{
+		return false;
+	}
+
+	if (NewCapacity < Slots.Num())
+	{
+		return false;
+	}
+
+	Capacity = NewCapacity;
+	Slots.SetNum(Capacity);
+	/* TODO: Broadcast OnContainerChanged */
+	return true;
+}
+
 bool UItemContainerComponent::AddItem(const FInventorySlot& Slot)
 {
 	if (ContainerType == EContainerType::None)
@@ -64,7 +87,8 @@ bool UItemContainerComponent::RemoveItem(int32 SlotIndex)
 		return false;
 	}	
 
-	/* TODO: Implement the actual removal logic */
+	/* TODO: Add RemoveQuantity(SlotIndex, Amount) for partial stacks (eating, crafting). */
+
 	Slots[SlotIndex] = FInventorySlot();
 	return true;
 }
@@ -74,7 +98,14 @@ void UItemContainerComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	Slots.SetNum(Capacity);
+	// SetCapacity refuses bad values (below 1, above MaxCapacity, or shrinking).
+	// If the starting Capacity set in Details is refused, say so loudly instead of
+	// silently leaving the container with zero slots.
+	if (!SetCapacity(Capacity))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s: starting Capacity %d was refused (MaxCapacity is %d). Container has %d slots."),
+			*GetNameSafe(GetOwner()), Capacity, MaxCapacity, Slots.Num());
+	}
 	
 }
 
