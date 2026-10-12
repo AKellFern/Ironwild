@@ -18,11 +18,17 @@ public:
 	UPROPERTY(EditAnywhere,BlueprintReadWrite, Category = "Item")
 	FText DisplayName;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
+	int32 ItemId = 0;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
 	UTexture2D* Icon;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
 	UTexture2D* StackIcon;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Visuals")
+	TObjectPtr<UStaticMesh> WorldMesh = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
 	float Weight = 0.0f; 

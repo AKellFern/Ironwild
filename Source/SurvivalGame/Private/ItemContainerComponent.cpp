@@ -1,7 +1,9 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-
 #include "ItemContainerComponent.h"
+#include "ItemDefinition.h"	
+
+
 
 
 // Sets default values for this component's properties
@@ -29,6 +31,18 @@ int32 UItemContainerComponent::FindEmptySlot() const
 	return INDEX_NONE;
 }
 
+int32 UItemContainerComponent::FindStackableSlot(const FInventorySlot& Slot) const
+{
+	for (int32 i = 0; i < Slots.Num(); ++i)
+	{
+		if (!Slots[i].IsEmpty() && Slots[i].ItemDefinition->ItemId == Slot.ItemDefinition->ItemId && Slots[i].Quantity < Slots[i].ItemDefinition->MaxStackSize)
+		{
+			return i;
+		}
+	}
+	return INDEX_NONE;
+}
+
 bool UItemContainerComponent::SetCapacity(int32 NewCapacity)
 {
 	if (NewCapacity <= 0)
@@ -48,31 +62,104 @@ bool UItemContainerComponent::SetCapacity(int32 NewCapacity)
 
 	Capacity = NewCapacity;
 	Slots.SetNum(Capacity);
-	/* TODO: Broadcast OnContainerChanged */
+	OnContainerChanged.Broadcast();
 	return true;
 }
 
-bool UItemContainerComponent::AddItem(const FInventorySlot& Slot)
+int32 UItemContainerComponent::AddItem(const FInventorySlot& Slot)
 {
+	// Validate the container.
 	if (ContainerType == EContainerType::None)
 	{
-		return false;
+		return Slot.Quantity;
 	}
 
+	// Validate the incoming item.
 	if (Slot.ItemDefinition == nullptr)
 	{
-		return false;
+		return Slot.Quantity;
 	}
 
-	int32 EmptySlot = FindEmptySlot();
-
-	if (EmptySlot == INDEX_NONE)
+	// Nothing (or a nonsense negative amount) to add, so nothing is left over.
+	if (Slot.Quantity <= 0)
 	{
-		return false;
+		return 0;
 	}
 
-	Slots[EmptySlot] = Slot;
-	return true;
+	if (Slot.ItemDefinition->MaxStackSize <= 0)
+	{
+		return Slot.Quantity;
+	}
+
+	// Track how many items still need to be added.
+	int32 RemainingQuantity = Slot.Quantity;
+
+	// Track whether the inventory was modified.
+	bool bInventoryChanged = false;
+
+	// STEP 1: Fill existing compatible stacks.
+	while (RemainingQuantity > 0)
+	{
+		int32 StackableSlot = FindStackableSlot(Slot);
+
+		if (StackableSlot == INDEX_NONE)
+		{
+			break;
+		}
+
+		FInventorySlot& ExistingSlot = Slots[StackableSlot];
+
+		int32 MaxStack = ExistingSlot.ItemDefinition->MaxStackSize;
+		int32 AvailableSpace = FMath::Max(0, MaxStack - ExistingSlot.Quantity);
+
+		int32 AmountToAdd = FMath::Min(
+			RemainingQuantity,
+			AvailableSpace
+		);
+
+		ExistingSlot.Quantity += AmountToAdd;
+		RemainingQuantity -= AmountToAdd;
+
+		bInventoryChanged = true;
+	}
+
+	// STEP 2: Create new stacks for leftover items.
+	while (RemainingQuantity > 0)
+	{
+		int32 EmptySlot = FindEmptySlot();
+
+		if (EmptySlot == INDEX_NONE)
+		{
+			break;
+		}
+
+		int32 MaxStack = Slot.ItemDefinition->MaxStackSize;
+
+		int32 AmountToAdd = FMath::Min(
+			RemainingQuantity,
+			MaxStack
+		);
+
+		FInventorySlot NewSlot = Slot;
+
+		NewSlot.Quantity = AmountToAdd;
+		NewSlot.ItemInstanceId = FGuid::NewGuid();
+
+		Slots[EmptySlot] = NewSlot;
+
+		RemainingQuantity -= AmountToAdd;
+
+		bInventoryChanged = true;
+	}
+
+	// STEP 3: Notify listeners if anything changed.
+	if (bInventoryChanged)
+	{
+		OnContainerChanged.Broadcast();
+	}
+
+	// Return how many units could not be added (0 = everything fit).
+	return RemainingQuantity;
 }
 
 bool UItemContainerComponent::RemoveItem(int32 SlotIndex)
@@ -90,7 +177,25 @@ bool UItemContainerComponent::RemoveItem(int32 SlotIndex)
 	/* TODO: Add RemoveQuantity(SlotIndex, Amount) for partial stacks (eating, crafting). */
 
 	Slots[SlotIndex] = FInventorySlot();
+	OnContainerChanged.Broadcast();
 	return true;
+}
+
+int32 UItemContainerComponent::FindSlotByGuid(const FGuid& ItemInstanceId) const
+{
+	if (!ItemInstanceId.IsValid())
+	{
+		return INDEX_NONE;
+	}
+	
+	for (int32 i = 0; i < Slots.Num(); ++i)
+	{
+		if (Slots[i].ItemInstanceId == ItemInstanceId)
+		{
+			return i;
+		}
+	}
+	return INDEX_NONE;
 }
 
 // Called when the game starts
