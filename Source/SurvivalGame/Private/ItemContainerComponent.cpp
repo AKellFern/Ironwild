@@ -9,8 +9,7 @@
 // Sets default values for this component's properties
 UItemContainerComponent::UItemContainerComponent()
 {
-	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
-	// off to improve performance if you don't need them.
+	// Containers only change when something calls into them, so they never tick.
 	PrimaryComponentTick.bCanEverTick = false;
 
 	
@@ -18,6 +17,7 @@ UItemContainerComponent::UItemContainerComponent()
 	// ...
 }
 
+// Linear scan. Containers hold tens of slots, so this is cheap.
 int32 UItemContainerComponent::FindEmptySlot() const
 {
 
@@ -31,6 +31,8 @@ int32 UItemContainerComponent::FindEmptySlot() const
 	return INDEX_NONE;
 }
 
+// Conditions are checked left to right: the slot is occupied (which makes the -> calls after it
+// safe), it holds the same ItemId, and it is still below its stack limit.
 int32 UItemContainerComponent::FindStackableSlot(const FInventorySlot& Slot) const
 {
 	for (int32 i = 0; i < Slots.Num(); ++i)
@@ -43,6 +45,8 @@ int32 UItemContainerComponent::FindStackableSlot(const FInventorySlot& Slot) con
 	return INDEX_NONE;
 }
 
+// Guards first, then apply. The shrink check compares against Slots.Num() rather than Capacity,
+// so the BeginPlay call (where Capacity already equals the requested value) is not refused.
 bool UItemContainerComponent::SetCapacity(int32 NewCapacity)
 {
 	if (NewCapacity <= 0)
@@ -60,15 +64,18 @@ bool UItemContainerComponent::SetCapacity(int32 NewCapacity)
 		return false;
 	}
 
+	// SetNum adds empty slots at the end; existing items keep their indices.
 	Capacity = NewCapacity;
 	Slots.SetNum(Capacity);
 	OnContainerChanged.Broadcast();
 	return true;
 }
 
-int32 UItemContainerComponent::AddItem(const FInventorySlot& Slot)
+// Full contract is in the header. Order: validate, top up existing stacks, open new stacks,
+// broadcast once, return what didn't fit.
+int32 UItemContainerComponent::AddItem(const FInventorySlot& Slot, bool bPreserveInstanceId)
 {
-	// Validate the container.
+	// Validate the container. A container with no type was never set up.
 	if (ContainerType == EContainerType::None)
 	{
 		return Slot.Quantity;
@@ -80,12 +87,21 @@ int32 UItemContainerComponent::AddItem(const FInventorySlot& Slot)
 		return Slot.Quantity;
 	}
 
+	// An unnumbered definition (ItemId 0) would stack with every other unnumbered item.
+	if (Slot.ItemDefinition->ItemId == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s: AddItem refused %s because its ItemId is 0 (not assigned)."),
+			*GetNameSafe(GetOwner()), *GetNameSafe(Slot.ItemDefinition));
+		return Slot.Quantity;
+	}
+
 	// Nothing (or a nonsense negative amount) to add, so nothing is left over.
 	if (Slot.Quantity <= 0)
 	{
 		return 0;
 	}
 
+	// A stack limit of 0 or less is a broken asset: no stack could ever hold anything.
 	if (Slot.ItemDefinition->MaxStackSize <= 0)
 	{
 		return Slot.Quantity;
@@ -109,6 +125,7 @@ int32 UItemContainerComponent::AddItem(const FInventorySlot& Slot)
 
 		FInventorySlot& ExistingSlot = Slots[StackableSlot];
 
+		// Room left in this stack, clamped so a stack already over its limit can't go negative.
 		int32 MaxStack = ExistingSlot.ItemDefinition->MaxStackSize;
 		int32 AvailableSpace = FMath::Max(0, MaxStack - ExistingSlot.Quantity);
 
@@ -122,6 +139,12 @@ int32 UItemContainerComponent::AddItem(const FInventorySlot& Slot)
 
 		bInventoryChanged = true;
 	}
+
+	// Only one stack can carry the incoming ID, and only if it is real and not already in this
+	// container (two slots sharing an ID would break FindSlotByGuid).
+	bool bCanPreserveId = bPreserveInstanceId
+		&& Slot.ItemInstanceId.IsValid()
+		&& FindSlotByGuid(Slot.ItemInstanceId) == INDEX_NONE;
 
 	// STEP 2: Create new stacks for leftover items.
 	while (RemainingQuantity > 0)
@@ -140,10 +163,20 @@ int32 UItemContainerComponent::AddItem(const FInventorySlot& Slot)
 			MaxStack
 		);
 
+		// Start from a copy of the incoming slot so any other per-item data comes along,
+		// then give this stack its own quantity and identity.
 		FInventorySlot NewSlot = Slot;
 
 		NewSlot.Quantity = AmountToAdd;
-		NewSlot.ItemInstanceId = FGuid::NewGuid();
+		if (bCanPreserveId)
+		{
+			NewSlot.ItemInstanceId = Slot.ItemInstanceId;
+			bCanPreserveId = false; // used up: any further stacks get fresh IDs
+		}
+		else
+		{
+			NewSlot.ItemInstanceId = FGuid::NewGuid();
+		}
 
 		Slots[EmptySlot] = NewSlot;
 
@@ -162,6 +195,7 @@ int32 UItemContainerComponent::AddItem(const FInventorySlot& Slot)
 	return RemainingQuantity;
 }
 
+// Removes the whole stack. Removing only part of a stack is the TODO below.
 bool UItemContainerComponent::RemoveItem(int32 SlotIndex)
 {
 	if (!Slots.IsValidIndex(SlotIndex))
@@ -183,6 +217,7 @@ bool UItemContainerComponent::RemoveItem(int32 SlotIndex)
 
 int32 UItemContainerComponent::FindSlotByGuid(const FGuid& ItemInstanceId) const
 {
+	// Every empty slot has an invalid ID, so searching for one would just return the first empty slot.
 	if (!ItemInstanceId.IsValid())
 	{
 		return INDEX_NONE;
@@ -214,12 +249,4 @@ void UItemContainerComponent::BeginPlay()
 	
 }
 
-
-// Called every frame
-void UItemContainerComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
-{
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
-	// ...
-}
 

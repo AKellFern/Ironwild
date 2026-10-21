@@ -10,9 +10,6 @@ public class SurvivalGame : ModuleRules
 	
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "UMG" });
 
-		PrivateDependencyModuleNames.AddRange(new string[] {  });
-
-		
 		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 		
 		
