@@ -31,13 +31,24 @@ int32 UItemContainerComponent::FindEmptySlot() const
 	return INDEX_NONE;
 }
 
-// Conditions are checked left to right: the slot is occupied (which makes the -> calls after it
-// safe), it holds the same ItemId, and it is still below its stack limit.
+// Both slots must be occupied before either definition is dereferenced. Stacking matches on ItemId,
+// not on the definition pointer (see ItemDefinition.h).
+bool UItemContainerComponent::IsSameItem(const FInventorySlot& A, const FInventorySlot& B)
+{
+	if (A.IsEmpty() || B.IsEmpty())
+	{
+		return false;
+	}
+	return A.ItemDefinition->ItemId == B.ItemDefinition->ItemId;
+}
+
+// Conditions are checked left to right: same item (IsSameItem also confirms the slot is occupied,
+// which makes the -> call after it safe), then still below its stack limit.
 int32 UItemContainerComponent::FindStackableSlot(const FInventorySlot& Slot) const
 {
 	for (int32 i = 0; i < Slots.Num(); ++i)
 	{
-		if (!Slots[i].IsEmpty() && Slots[i].ItemDefinition->ItemId == Slot.ItemDefinition->ItemId && Slots[i].Quantity < Slots[i].ItemDefinition->MaxStackSize)
+		if (IsSameItem(Slots[i], Slot) && Slots[i].Quantity < Slots[i].ItemDefinition->MaxStackSize)
 		{
 			return i;
 		}
@@ -214,6 +225,85 @@ bool UItemContainerComponent::RemoveItem(int32 SlotIndex)
 	OnContainerChanged.Broadcast();
 	return true;
 }
+
+// Full contract is in the header. Order: validate, pick the case from what is in the target slot,
+// apply it, then broadcast every container that changed.
+bool UItemContainerComponent::MoveItem(int32 FromSlotIndex, UItemContainerComponent* TargetContainer, int32 ToSlotIndex)
+{
+	// Validate the target container. Checked first because everything below dereferences it.
+	// An untyped container is refused for the same reason AddItem refuses it: it was never set up.
+	if (TargetContainer == nullptr || TargetContainer->ContainerType == EContainerType::None)
+	{
+		return false;
+	}
+
+	// Each index is checked against its OWN container's slots.
+	if (!Slots.IsValidIndex(FromSlotIndex) || !TargetContainer->Slots.IsValidIndex(ToSlotIndex))
+	{
+		return false;
+	}
+
+	// Dropping a slot onto itself changes nothing. Both halves are needed: the same index in a
+	// DIFFERENT container is a real move.
+	if (TargetContainer == this && FromSlotIndex == ToSlotIndex)
+	{
+		return false;
+	}
+
+	// References, not copies: every change below has to land in the arrays themselves.
+	FInventorySlot& Source = Slots[FromSlotIndex];
+	FInventorySlot& Target = TargetContainer->Slots[ToSlotIndex];
+
+	if (Source.IsEmpty())
+	{
+		return false;
+	}
+
+	if (Target.IsEmpty())
+	{
+		// CASE 1: empty target. The whole stack moves, identity included.
+		Target = Source;
+		Source = FInventorySlot();
+	}
+	else if (IsSameItem(Source, Target))
+	{
+		// CASE 2: same item. Room left in the target, clamped so an over-full stack can't go
+		// negative, then move the smaller of that room and what the source holds.
+		const int32 AvailableSpace = FMath::Max(0, Target.ItemDefinition->MaxStackSize - Target.Quantity);
+		const int32 AmountToMove = FMath::Min(AvailableSpace, Source.Quantity);
+
+		// Target stack already full: nothing changes, so return before the broadcast.
+		if (AmountToMove <= 0)
+		{
+			return false;
+		}
+
+		// The target keeps its own ItemInstanceId; merged quantity takes the stack's ID.
+		Target.Quantity += AmountToMove;
+		Source.Quantity -= AmountToMove;
+
+		// Everything fit: empty the source completely (definition and ID too), like RemoveItem.
+		if (Source.Quantity <= 0)
+		{
+			Source = FInventorySlot();
+		}
+	}
+	else
+	{
+		// CASE 3: different items. Swap whole slots, so each item keeps its own ItemInstanceId.
+		Swap(Source, Target);
+	}
+
+	// Every path that reaches here changed something. A move between two containers changed both,
+	// and each one's widget only listens to its own container.
+	OnContainerChanged.Broadcast();
+	if (TargetContainer != this)
+	{
+		TargetContainer->OnContainerChanged.Broadcast();
+	}
+	return true;
+}
+
 
 int32 UItemContainerComponent::FindSlotByGuid(const FGuid& ItemInstanceId) const
 {

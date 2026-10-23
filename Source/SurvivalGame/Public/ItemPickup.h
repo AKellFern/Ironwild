@@ -21,7 +21,7 @@ class UItemContainerComponent;
  * every shape component on the actor, forces it to overlap-only, and listens for pawns entering it.
  * A Blueprint with no shape component logs a warning and can't be picked up.
  */
-UCLASS()
+UCLASS(PrioritizeCategories = (Pickup))
 class SURVIVALGAME_API AItemPickup : public AActor
 {
 	GENERATED_BODY()

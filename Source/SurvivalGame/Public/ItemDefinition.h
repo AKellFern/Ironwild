@@ -51,10 +51,7 @@ public:
 
 	// Base value of one item.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
-	int32 BuyPrice = 0;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
-	int32 SellPrice = 0;
+	int32 BaseValue = 0;
 
 	// Most of this item one slot can hold. 1 = never stacks (tools, weapons).
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")

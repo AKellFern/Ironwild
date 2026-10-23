@@ -39,7 +39,7 @@ public:
 	// Index of the first empty slot, or INDEX_NONE if the container is full.
 	int32 FindEmptySlot() const;
 
-	// Index of the first slot holding the same item (by ItemId) that still has room, or INDEX_NONE.
+	// Index of the first slot holding the same item (see IsSameItem) that still has room, or INDEX_NONE.
 	int32 FindStackableSlot(const FInventorySlot& Slot) const;
 
 	// What this container is for. Must not be None, or AddItem refuses everything.
@@ -73,6 +73,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 		bool RemoveItem(int32 SlotIndex);
 
+	// Moves the stack in FromSlotIndex (this container) onto ToSlotIndex in TargetContainer, which may be
+	// this container. What happens depends on the target slot:
+	//   empty          -> the whole stack moves there, ItemInstanceId included; the source is cleared.
+	//   same item      -> merges as much as fits under MaxStackSize. The target keeps its own
+	//                     ItemInstanceId (same rule as AddItem); any remainder stays in the source.
+	//   different item -> the two slots swap; each item keeps its own ItemInstanceId.
+	// Returns true if anything changed. Returns false (and changes nothing) for a null or untyped
+	// TargetContainer, an index out of range, an empty source, the same slot as the target, or a
+	// same-item target that is already full. Broadcasts OnContainerChanged on every container changed.
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+		bool MoveItem(int32 FromSlotIndex, UItemContainerComponent* TargetContainer, int32 ToSlotIndex);
+
 	// Index of the slot holding the item with this ItemInstanceId, or INDEX_NONE.
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 		int32 FindSlotByGuid(const FGuid& ItemInstanceId) const;
@@ -80,4 +92,10 @@ public:
 protected:
 	// Called when the game starts. Sizes Slots from Capacity.
 	virtual void BeginPlay() override;
+
+private:
+	// True when both slots hold the same kind of item, i.e. they could share one stack.
+	// The single place the stacking rule lives, used by FindStackableSlot and MoveItem. Today it
+	// compares ItemId; when item quality is added, it becomes "same ItemId AND same quality".
+	static bool IsSameItem(const FInventorySlot& A, const FInventorySlot& B);
 };
