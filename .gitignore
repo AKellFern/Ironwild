@@ -7,6 +7,7 @@ Saved/
 
 # Unreal local state
 *.sln
+*.slnx
 *.suo
 *.opensdf
 *.sdf
@@ -44,3 +45,34 @@ CLAUDE.local.md
 responses/
 .mcp.json
 Claude outputs/
+
+# ---- Raw / AI-generated source art (never loaded by Unreal, huge in LFS) ----
+# Source art belongs outside the repo: C:\Unreal\ArtSource\Ironwild
+Content/MeshyImports/
+Content/**/*.fbx
+Content/**/*.fbm/
+*.fbm/
+/Art_Source/
+
+# ---- Superseded retarget output (regenerable from RTG_UEFN_to_Survival) ----
+Content/Characters/RetargetedAnimations/
+
+# ---- Packaged / cooked output ----
+/Packaged/
+/Builds/
+/Dist/
+*.pak
+*.ucas
+*.utoc
+*.ushaderbytecode
+
+# ---- Per-platform generated trees (UE 5.x layout) ----
+Platforms/*/Binaries/
+Platforms/*/Intermediate/
+Platforms/*/Build/
+
+# ---- Unreal editor local artifacts ----
+*.autosave
+*.uasset.tmp
+*.umap.tmp
+*.VC.db-*
